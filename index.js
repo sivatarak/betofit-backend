@@ -236,6 +236,9 @@ async function searchOpenFoodFacts(query) {
 
 async function searchIndianFoods(query) {
   try {
+    // normalize user query
+    const q = query.trim().toLowerCase();
+
     const results = await sql`
       SELECT 
         name, 
@@ -247,14 +250,16 @@ async function searchIndianFoods(query) {
         'indian_db' as source
       FROM indian_foods
       WHERE 
-        LOWER(name) LIKE LOWER(${'%' + query + '%'}) 
-        OR LOWER(name_regional) LIKE LOWER(${'%' + query + '%'})
-        OR LOWER(search_keywords) LIKE LOWER(${'%' + query + '%'})
+        LOWER(name) LIKE LOWER(${q + '%'})
+        OR LOWER(name_regional) LIKE LOWER(${q + '%'})
+        OR LOWER(search_keywords) ~* ('\\m' || ${q} || '\\M')
       ORDER BY 
         CASE 
-          WHEN LOWER(name) = LOWER(${query}) THEN 1
-          WHEN LOWER(name) LIKE LOWER(${query + '%'}) THEN 2
-          ELSE 3
+          WHEN LOWER(name) = LOWER(${q}) THEN 1
+          WHEN LOWER(name) LIKE LOWER(${q + '%'}) THEN 2
+          WHEN LOWER(name_regional) LIKE LOWER(${q + '%'}) THEN 3
+          WHEN LOWER(search_keywords) ~* ('\\m' || ${q} || '\\M') THEN 4
+          ELSE 5
         END
       LIMIT 10
     `;
@@ -279,6 +284,7 @@ async function searchIndianFoods(query) {
       is_vegetarian: r.is_vegetarian,
       source: 'indian_db'
     }));
+
   } catch (error) {
     console.log("Indian foods search failed:", error.message);
     return [];
@@ -568,12 +574,12 @@ app.post("/api/workouts", async (req, res) => {
     let caloriesBurned = 0;
     if (profile.length > 0) {
       const { current_weight, age, height, gender } = profile[0];
-      
+
       // Mifflin-St Jeor BMR
       const bmr = gender === 'male'
         ? (10 * current_weight) + (6.25 * height) - (5 * age) + 5
         : (10 * current_weight) + (6.25 * height) - (5 * age) - 161;
-      
+
       const bmrPerMinute = bmr / 1440;
       caloriesBurned = Math.round(metValue * bmrPerMinute * durationMinutes);
     }
@@ -581,7 +587,7 @@ app.post("/api/workouts", async (req, res) => {
     // Calculate total volume and reps
     let totalVolume = 0;
     let totalReps = 0;
-    
+
     sets.forEach(set => {
       totalReps += set.reps || 0;
       totalVolume += (set.reps || 0) * (set.weight || 0);
